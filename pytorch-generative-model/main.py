@@ -16,7 +16,10 @@ class WGANconfig():
     steps_epoch = 100 
 
     # dataset parameters
-    dataset_root_path = 'E:\\terrain_project'
+    root_path = 'E:\\terrain_project'
+    dataset_path = 'E:\\terrain_project\\usgs_terrain\\tiff_file'
+    tar_paths = ['file:E:/terrain_project/usgs_terrain/tiff_file/test.tar']
+    dataset_subpath = ['us_patch128']
     hdf_path = 'terrains'
     save_dir = 'train_log'
     result_dir = 'train_results'
