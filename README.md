@@ -12,7 +12,7 @@ Dependancy:
 
 3. webdataset: In WGAN_GP implementation, data is first stored in .hdf file and loads into map-style dataset. The drawback of map-style dataset is to load all the data in one time which may cause memory error if you run with small RAM. However, webdataset allows stream data via urls, using less memory without losing speed if you have ssd. You can store your data on local computer, local server or online(flexible).
      1) Your dataset should in .tar format. Then for each training sample, if you will have two images, they should be named like "prefix.filename.format",          "prefix.filename1.format". All the files will be used in the same sample need the same prefix and "filename.format" will be used to distinguish different files.
-     2) Followings are some web pages, helping you learn more about webdataset. \
+     2) Followings are some web pages, helping you learn more about webdataset. 
         webdataset official webpage: https://webdataset.github.io/webdataset/ \
         command for creating directory: https://www.gnu.org/software/tar/manual/html_node/directory.html \
         online examples: https://medium.com/red-buffer/why-did-i-choose-webdataset-for-training-on-50tb-of-data-98a563a916bf \
