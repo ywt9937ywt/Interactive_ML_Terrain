@@ -179,6 +179,7 @@ class CGAN(object):
             print("current epoch: {0}".format(epoch))
             self.G.train()
             epoch_start_time = time.time()
+            stepcount = 0
             for sample_batch in self.data_loader:
                 tifs = torch.squeeze(sample_batch[0][0:self.batch_size])
                 dis_sketches = torch.squeeze(sample_batch[1][0:self.batch_size])
@@ -262,6 +263,10 @@ class CGAN(object):
 
                 #     self.train_hist['D_loss'].append(D_loss.item())
                 ######
+                stepcount = stepcount + 1
+                if(stepcount % 100 == 0):
+                    print("current step count: {0}".format(stepcount))
+                    
             if (epoch % 100) == 0:
                 print("Epoch: [%2d] D_loss: %.8f, G_loss: %.8f" %
                         ((epoch + 1),  D_loss.item(), G_loss.item()))
