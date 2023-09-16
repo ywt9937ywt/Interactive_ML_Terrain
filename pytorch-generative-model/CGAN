@@ -112,7 +112,7 @@ class discriminator(nn.Module):
         x = self.fc(x)
         return x
 
-class WGAN_GP(object):
+class CGAN(object):
     def __init__(self, config):
         self.config = config
         self.epoch = config.epoch
@@ -129,10 +129,10 @@ class WGAN_GP(object):
         self.lambda_ = 10
         self.n_critic = 5               # the number of iterations of the critic per generator iteration
 
-        self.dataset = WGANGP_dataset(self.config, self.config.tar_paths)
+        self.dataset = CGAN_dataset(self.config, self.config.tar_paths)
         self.data_loader = DataLoader(self.dataset,
                                       batch_size= self.batch_size * 2,
-                                      collate_fn=WGAN_Collate, 
+                                      collate_fn=CGAN_Collate, 
                                       )
         self.G = generator(input_dim=self.z_dim, output_dim=1, input_size=self.input_size)
         self.D = discriminator(input_dim=1, output_dim=1, input_size=self.input_size)
@@ -348,7 +348,7 @@ class WGAN_GP(object):
 
 
 
-class WGANGP_dataset(IterableDataset):
+class CGAN_dataset(IterableDataset):
     def __init__(self, config, urls, mode='train'):
         print("--------Initialize WGAN_GP dataset --------")
         self.config = config
@@ -370,7 +370,7 @@ class WGANGP_dataset(IterableDataset):
 def tif_decoder(value):
   return rioxarray.open_rasterio(io.BytesIO(value)).values
 
-def WGAN_Collate(batch_data):
+def CGAN_Collate(batch_data):
     tifbatch = []
     rsbatch = []
     for t in batch_data:
