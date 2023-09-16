@@ -1,5 +1,5 @@
 import utils, torch, time, os, pickle
-import cv2, imageio, io, random
+import cv2, imageio, io, random, torch, rioxarray
 import tifffile as tiff
 import numpy as np
 import torch.nn as nn
@@ -19,8 +19,8 @@ class generator(nn.Module):
     # Architecture : FC1024_BR-FC7x7x128_BR-(64)4dc2s_BR-(1)4dc2s_S
     def __init__(self, input_dim=100, output_dim=1, input_size=32):
         super(generator, self).__init__()
-        self.embedding_class_n = 5
-        self.embedding_dim = 5
+        self.embedding_class_n = 20000
+        self.embedding_dim = 30
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.input_size = input_size
@@ -73,8 +73,8 @@ class discriminator(nn.Module):
     # Architecture : (64)4c2s-(128)4c2s_BL-FC1024_BL-FC1_S
     def __init__(self, input_dim=1, output_dim=1, input_size=32):
         super(discriminator, self).__init__()
-        self.embedding_class_n = 5
-        self.embedding_dim = 5
+        self.embedding_class_n = 20000
+        self.embedding_dim = 30
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.input_size = input_size
@@ -93,7 +93,7 @@ class discriminator(nn.Module):
             nn.BatchNorm1d(1024),
             nn.LeakyReLU(0.2),
             nn.Linear(1024, self.output_dim),
-            # nn.Sigmoid(),
+            nn.Sigmoid(),
         )
         self.label_dics_process = nn.Sequential(
             nn.Embedding(self.embedding_class_n, self.embedding_dim),
@@ -105,8 +105,6 @@ class discriminator(nn.Module):
         img, label = input
         label_output = self.label_dics_process(label)
         label_output = label_output.view(-1, 8, 128, 128)
-        # print(img.size())
-        # print(label_output.size())
         img = img[:, None, :, :]
         concat = torch.cat((img, label_output), dim = 1)
         x = self.conv(concat)
@@ -114,16 +112,11 @@ class discriminator(nn.Module):
         x = self.fc(x)
         return x
 
-class CGAN(object):
+class WGAN_GP(object):
     def __init__(self, config):
-    #     self.dataset = wds.WebDataset(config.tar_paths[0]).decode("rgb").to_tuple("tif", "rs.png")
-    #     for img, tif in self.dataset:
-    #         print(img.shape)
-    #         return
-        # parameters
         self.config = config
         self.epoch = config.epoch
-        self.sample_num = 1000
+        # self.sample_num = 1000
         self.batch_size = config.nimg_batch
         self.save_dir = join(config.root_path, config.save_dir)
         self.result_dir = join(config.root_path, config.result_dir)
@@ -138,31 +131,12 @@ class CGAN(object):
 
         self.dataset = WGANGP_dataset(self.config, self.config.tar_paths)
         self.data_loader = DataLoader(self.dataset,
-                                      batch_size= self.batch_size,
+                                      batch_size= self.batch_size * 2,
                                       collate_fn=WGAN_Collate, 
-                                    #   sampler = training_sampler,
-                                    #   batch_sampler=training_batch_sampler
                                       )
-        # for sample in self.data_loader:
-        #     print(sample[0].shape)
-        #     print(sample[1].shape)
-        #     return
-        # data = next(iter(self.dataset))
-        # print(data[0].shape)
-        # print(data[1].shape)
-        # return
-        # networks init
         self.G = generator(input_dim=self.z_dim, output_dim=1, input_size=self.input_size)
         self.D = discriminator(input_dim=1, output_dim=1, input_size=self.input_size)
-        # a = torch.Tensor(np.zeros((2, 128, 128)))
-        # b = torch.LongTensor(np.zeros((2,128, 128)))6+
-        # print(a.size())
-        # print(b.size())
-        # x = self.D((a,b))
-        # print(x.size())
-        # return
-        # self.G = generator(input_dim=self.z_dim, output_dim=data.shape[1], input_size=self.input_size)
-        # self.D = discriminator(input_dim=data.shape[1], output_dim=1, input_size=self.input_size)
+        
         self.G_optimizer = optim.Adam(self.G.parameters(), lr=config.lrG, betas=(config.beta1, config.beta2))
         self.D_optimizer = optim.Adam(self.D.parameters(), lr=config.lrD, betas=(config.beta1, config.beta2))
 
@@ -202,26 +176,20 @@ class CGAN(object):
         print('training start!!')
         start_time = time.time()
         for epoch in range(self.epoch):
+            print("current epoch: {0}".format(epoch))
             self.G.train()
             epoch_start_time = time.time()
-            count = 0
             for sample_batch in self.data_loader:
-                # if iter == self.data_loader.dataset.__len__() // self.batch_size:
-                #     break
-                tifs = sample_batch[0]
-                sketches = sample_batch[1]
+                tifs = torch.squeeze(sample_batch[0][0:self.batch_size])
+                dis_sketches = torch.squeeze(sample_batch[1][0:self.batch_size])
+                gen_sketches = torch.squeeze(sample_batch[1][self.batch_size:])
 
-                tifs = torch.LongTensor(np.zeros((self.batch_size,128,128)))
-                sketches = torch.LongTensor(np.zeros((self.batch_size,128,128)))
-                user_input_sketch = torch.LongTensor(np.zeros((self.batch_size,128,128)))
-
-                z_ = torch.rand((self.batch_size, self.z_dim))
                 z_ = torch.rand((self.batch_size, self.z_dim))
                 if self.gpu_mode:
-                    z_, sketches, tifs, user_input_sketch = z_.cuda(), sketches.cuda(), tifs.cuda(), user_input_sketch.cuda()
+                    z_, dis_sketches, tifs, gen_sketches = z_.cuda(), dis_sketches.cuda(), tifs.cuda(), gen_sketches.cuda()
 
-                gen_input = (z_, sketches)
-                disc_input = (tifs, sketches)
+                gen_input = (z_, gen_sketches)
+                disc_input = (tifs, dis_sketches)
 
                 # update D network
                 self.D_optimizer.zero_grad()
@@ -231,7 +199,7 @@ class CGAN(object):
                 D_real_loss = self.BCE_loss(D_real, self.y_real_)
 
                 G_ = torch.squeeze(self.G(gen_input))
-                D_fake = self.D((G_, user_input_sketch))
+                D_fake = self.D((G_, gen_sketches))
                 # D_fake_loss = torch.mean(D_fake)
                 D_fake_loss = self.BCE_loss(D_fake, self.y_fake_)
 
@@ -245,7 +213,7 @@ class CGAN(object):
                 self.G_optimizer.zero_grad()
 
                 G_ = torch.squeeze(self.G(gen_input))
-                D_fake = self.D((G_, user_input_sketch))
+                D_fake = self.D((G_, gen_sketches))
                 G_loss = self.BCE_loss(D_fake, self.y_real_)
                 self.train_hist['G_loss'].append(G_loss.item())
 
@@ -294,11 +262,9 @@ class CGAN(object):
 
                 #     self.train_hist['D_loss'].append(D_loss.item())
                 ######
-                count = count + 1
-                if ((iter + 1) % 100) == 0:
-                    print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
-                          ((epoch + 1), (iter + 1), self.data_loader.dataset.__len__() // self.batch_size, D_loss.item(), G_loss.item()))
-                return
+            if (epoch % 100) == 0:
+                print("Epoch: [%2d] D_loss: %.8f, G_loss: %.8f" %
+                        ((epoch + 1),  D_loss.item(), G_loss.item()))
                 
             # print("count {0}".format(count))
             self.train_hist['per_epoch_time'].append(time.time() - epoch_start_time)
@@ -311,17 +277,17 @@ class CGAN(object):
               self.epoch, self.train_hist['total_time'][0]))
         print("Training finish!... save training results")
 
-        self.save()
-        utils.generate_animation(self.result_dir + '/' + self.model_name,
-                                 self.epoch)
+        # self.save()
+        # utils.generate_animation(self.result_dir + '/' + self.model_name,
+                                #  self.epoch)
         # utils.loss_plot(self.train_hist, os.path.join(self.save_dir, self.model_name), self.model_name)
 
-        r = range(self.epoch)
-        plt.title('val')
-        plt.plot(r, self.meanval, 'r-')
-        plt.plot(r, self.maxval, 'b-')
-        plt.plot(r, self.minval, 'g-')
-        plt.show()
+        # r = range(self.epoch)
+        # plt.title('val')
+        # plt.plot(r, self.meanval, 'r-')
+        # plt.plot(r, self.maxval, 'b-')
+        # plt.plot(r, self.minval, 'g-')
+        # plt.show()
 
     def visualize_results(self, epoch, fix=True):
         self.G.eval()
@@ -386,48 +352,25 @@ class WGANGP_dataset(IterableDataset):
     def __init__(self, config, urls, mode='train'):
         print("--------Initialize WGAN_GP dataset --------")
         self.config = config
-        #self.filename_list = ['pre_128.npy']
-        # self.convert(self.filename_list[0])
-        # self.convert(self.config.dataset_subpath[0])
         self.dataset_seg = [0.8, 0.1, 0.1]
         self.mode = mode
         self.urls = urls
-        # self.transform = transforms.Compose([transforms.ToTensor()])
-        # load converted data
         
         print("--------Initializing WGAN dataset finished--------")
-
-    # def process_data(self, url):
-    #     dataset = wds.WebDataset(url).shuffle(1000).decode(
-    #         wds.handle_extension("tif", wdsDecoder),
-    #         wds.handle_extension("rs.png", wdsDecoder),
-    #     ).to_tuple("tif", "rs.png")
-    #     for sample in dataset:
-    #         yield sample
-
-    # def shuffled_data_list(self):
-    #     return random
-
-    # def get_stream(self, urlList):
-    #     return chain.from_iterable(map(self.process_data, cycle(urlList)))
-
-    # def get_streams(self):
-    #     return zip(*[self.get_stream(self.urls) for _ in range(3)])
     
     def __iter__(self):
         for url in cycle(self.urls):
             dataset = wds.WebDataset(url).shuffle(1000).decode(
-                "rgb"
+                wds.imagehandler("l8", "rs.png"),
+                wds.handle_extension("tif", tif_decoder),
             ).to_tuple("tif", "rs.png")
             for sample in dataset:
                 yield sample
 
-def wdsDecoder(value):
-    return imageio.imread(io.BytesIO(value))
+def tif_decoder(value):
+  return rioxarray.open_rasterio(io.BytesIO(value)).values
 
 def WGAN_Collate(batch_data):
-    # print(np.expand_dims(batch_data, axis=1).shape)
-    # return torch.from_numpy(np.expand_dims(batch_data, axis=1))
     tifbatch = []
     rsbatch = []
     for t in batch_data:
@@ -435,6 +378,4 @@ def WGAN_Collate(batch_data):
         rsbatch.append(t[1])
     tifbatch = np.array(tifbatch)
     rsbatch = np.array(rsbatch)
-    # print(tifbatch.shape)
-    # print(rsbatch.shape)
     return (torch.from_numpy(tifbatch).int(), torch.from_numpy(rsbatch).int())
