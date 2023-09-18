@@ -66,7 +66,6 @@ class generator(nn.Module):
         concat = torch.cat((x, processed_sketch), dim = 1)
         image = self.deconv(concat)
         return image
-        return (x + 1)/2
 
 class discriminator(nn.Module):
     # Network Architecture is exactly same as in infoGAN (https://arxiv.org/abs/1606.03657)
@@ -116,10 +115,14 @@ class CGAN(object):
     def __init__(self, config):
         self.config = config
         self.epoch = config.epoch
-        # self.sample_num = 1000
         self.batch_size = config.nimg_batch
         self.save_dir = join(config.root_path, config.save_dir)
         self.result_dir = join(config.root_path, config.result_dir)
+        self.lossfunc = config.lossfun
+        # self.test_sketch = cv2.imread("E:\\terrain_project\\usgs_terrain\\tiff_file\\us_patch128\\00000rs.png",0)
+        # self.test_sketch = torch.LongTensor(self.test_sketch)
+
+
         # self.log_dir = args.log_dir
         self.gpu_mode = config.gpu_mode
         self.model_name = config.gan_type
@@ -128,6 +131,21 @@ class CGAN(object):
         self.c = 0.01                   # clipping value
         self.lambda_ = 10
         self.n_critic = 5               # the number of iterations of the critic per generator iteration
+
+        self.test_sketch = []
+        for i in range(self.batch_size):
+            pertest_sketch = cv2.imread("E:\\terrain_project\\usgs_terrain\\tiff_file\\us_patch128\\{0}rs.png".format(str(i).zfill(5)),0)
+            self.test_sketch.append(pertest_sketch)
+        self.test_sketch = torch.LongTensor(np.array(self.test_sketch))
+
+        self.train_hist = {}
+        self.meanval = []
+        self.minval = []
+        self.maxval = []
+        self.train_hist['D_loss'] = []
+        self.train_hist['G_loss'] = []
+        self.train_hist['per_epoch_time'] = []
+        self.train_hist['total_time'] = []
 
         self.dataset = CGAN_dataset(self.config, self.config.tar_paths)
         self.data_loader = DataLoader(self.dataset,
@@ -152,21 +170,10 @@ class CGAN(object):
         utils.print_network(self.D)
         print('-----------------------------------------------')
 
-        # fixed noise
-        self.sample_z_ = torch.rand((self.batch_size, self.z_dim))
-        if self.gpu_mode:
-            self.sample_z_ = self.sample_z_.cuda()
+        
 
     def train(self):
 
-        self.train_hist = {}
-        self.meanval = []
-        self.minval = []
-        self.maxval = []
-        self.train_hist['D_loss'] = []
-        self.train_hist['G_loss'] = []
-        self.train_hist['per_epoch_time'] = []
-        self.train_hist['total_time'] = []
 
         self.y_real_, self.y_fake_ = torch.ones(self.batch_size, 1), torch.zeros(self.batch_size, 1)
         if self.gpu_mode:
@@ -181,6 +188,7 @@ class CGAN(object):
             epoch_start_time = time.time()
             stepcount = 0
             for sample_batch in self.data_loader:
+                if stepcount == 250: break
                 tifs = torch.squeeze(sample_batch[0][0:self.batch_size])
                 dis_sketches = torch.squeeze(sample_batch[1][0:self.batch_size])
                 gen_sketches = torch.squeeze(sample_batch[1][self.batch_size:])
@@ -191,6 +199,7 @@ class CGAN(object):
 
                 gen_input = (z_, gen_sketches)
                 disc_input = (tifs, dis_sketches)
+                # print(z_.size())
 
                 # update D network
                 self.D_optimizer.zero_grad()
@@ -266,10 +275,10 @@ class CGAN(object):
                 stepcount = stepcount + 1
                 if(stepcount % 100 == 0):
                     print("current step count: {0}".format(stepcount))
-                    
-            if (epoch % 100) == 0:
-                print("Epoch: [%2d] D_loss: %.8f, G_loss: %.8f" %
-                        ((epoch + 1),  D_loss.item(), G_loss.item()))
+
+            # if (epoch % 100) == 0:
+            print("Epoch: [%2d] D_loss: %.8f, G_loss: %.8f" %
+                    ((epoch + 1),  D_loss.item(), G_loss.item()))
                 
             # print("count {0}".format(count))
             self.train_hist['per_epoch_time'].append(time.time() - epoch_start_time)
@@ -300,19 +309,26 @@ class CGAN(object):
         if not os.path.exists(self.result_dir + '/' + self.model_name):
             os.makedirs(self.result_dir + '/' + self.model_name)
 
-        tot_num_samples = min(self.sample_num, self.batch_size)
+        tot_num_samples = min(10, self.batch_size)
         image_frame_dim = int(np.floor(np.sqrt(tot_num_samples)))
 
-        if fix:
-            """ fixed noise """
-            samples = self.G(self.sample_z_)
-        else:
-            """ random noise """
-            sample_z_ = torch.rand((self.batch_size, self.z_dim))
-            if self.gpu_mode:
-                sample_z_ = sample_z_.cuda()
+        # fixed noise
+        self.sample_z_ = torch.rand((self.batch_size, self.z_dim))
+        # self.sample_z_ = torch.LongTensor(self.sample_z_)
+        # print(self.sample_z_.size())
+        # print(self.test_sketch.size())
+        # if fix:
+        #     """ fixed noise """
+        #     samples = self.G((self.sample_z_, self.test_sketch))
+        # else:
+        #     """ random noise """
+        #     # sample_z_ = torch.rand((self.batch_size, self.z_dim))
 
-            samples = self.G(sample_z_)
+        if self.gpu_mode:
+            self.sample_z_ = self.sample_z_.cuda()
+            self.test_sketch = self.test_sketch.cuda()
+
+        samples = self.G((self.sample_z_,self.test_sketch))
 
         if self.gpu_mode:
             samples = samples.cpu().data.numpy().transpose(0, 2, 3, 1)
@@ -327,7 +343,7 @@ class CGAN(object):
         self.minval.append(np.min(img))
         self.maxval.append(np.max(img))
         utils.save_images(samples[0], [image_frame_dim, image_frame_dim],
-                          self.result_dir + '/' + self.model_name + '_epoch%03d' % epoch + '.png')
+                          self.result_dir + '/' + self.model_name + '//epoch%03d' % epoch + '.tif')
 
     def update(self, frame):
         plt.cla()
