@@ -4,8 +4,9 @@ from WGAN import WGAN
 import utils
 
 class WGANconfig():
-    gan_type = 'WGAN'
-
+    gan_type = 'WGAN_GP'
+    lossfun = 'wgan-gp_loss' # or 'gan_loss'
+    # lossfun = 'gan_loss'
     # training parameters
     epoch = 300
     gpu_mode = True
@@ -26,9 +27,9 @@ class WGANconfig():
     input_size = 128
 
     #sampler parameters
-    nimg_batch = 5
+    nimg_batch = 5 
     drop_last = True
-
+    
 """parsing and configuration"""
 def parse_args():
     desc = "Pytorch implementation of GAN collections"
