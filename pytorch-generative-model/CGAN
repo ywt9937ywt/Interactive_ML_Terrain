@@ -26,6 +26,7 @@ class generator(nn.Module):
         self.input_size = input_size
         self.output_size = 128
 
+
         self.fc = nn.Sequential(
             nn.Linear(self.input_dim, 1024),
             nn.BatchNorm1d(1024),
@@ -55,9 +56,9 @@ class generator(nn.Module):
 
     def forward(self, input):
         noise_vector, sketch = input
-        processed_sketch = self.label_generator_process(sketch)#128, 128, embedding_dim
+        processed_sketch = self.label_generator_process(sketch.int())#128, 128, embedding_dim
+        # print(processed_sketch.size())
         processed_sketch = processed_sketch.view(-1, 128, (self.input_size // 8), (self.input_size // 8))
-
 
         x = self.fc(noise_vector)
         x = x.view(-1, 128, (self.input_size // 8), (self.input_size // 8))
@@ -81,7 +82,7 @@ class discriminator(nn.Module):
         self.labelout_dim = 8
 
         self.conv = nn.Sequential(
-            nn.Conv2d(self.input_dim + self.labelout_dim, 64, 4, 2, 1),
+            nn.Conv2d(2, 64, 4, 2, 1),
             nn.LeakyReLU(0.2),
             nn.Conv2d(64, 128, 4, 2, 1),
             nn.BatchNorm2d(128),
@@ -101,11 +102,7 @@ class discriminator(nn.Module):
         utils.initialize_weights(self)
 
     def forward(self, input):
-        img, label = input
-        label_output = self.label_dics_process(label)
-        label_output = label_output.view(-1, 8, 128, 128)
-        img = img[:, None, :, :]
-        concat = torch.cat((img, label_output), dim = 1)
+        concat = input
         x = self.conv(concat)
         x = x.view(-1, 128 * (self.input_size // 4) * (self.input_size // 4))
         x = self.fc(x)
@@ -173,8 +170,6 @@ class CGAN(object):
         
 
     def train(self):
-
-
         self.y_real_, self.y_fake_ = torch.ones(self.batch_size, 1), torch.zeros(self.batch_size, 1)
         if self.gpu_mode:
             self.y_real_, self.y_fake_ = self.y_real_.cuda(), self.y_fake_.cuda()
@@ -189,46 +184,97 @@ class CGAN(object):
             stepcount = 0
             for sample_batch in self.data_loader:
                 if stepcount == 250: break
-                tifs = torch.squeeze(sample_batch[0][0:self.batch_size])
-                dis_sketches = torch.squeeze(sample_batch[1][0:self.batch_size])
-                gen_sketches = torch.squeeze(sample_batch[1][self.batch_size:])
+                tifs = torch.squeeze(sample_batch[0][0:self.batch_size]).float()
+                dis_sketches = torch.squeeze(sample_batch[1][0:self.batch_size]).float()
+                gen_sketches = torch.squeeze(sample_batch[1][self.batch_size:]).float()
 
                 z_ = torch.rand((self.batch_size, self.z_dim))
                 if self.gpu_mode:
                     z_, dis_sketches, tifs, gen_sketches = z_.cuda(), dis_sketches.cuda(), tifs.cuda(), gen_sketches.cuda()
 
                 gen_input = (z_, gen_sketches)
-                disc_input = (tifs, dis_sketches)
-                # print(z_.size())
+
+                disc_input = torch.cat((tifs[:, None, :, :], dis_sketches[:, None, :, :]), dim = 1)
 
                 # update D network
                 self.D_optimizer.zero_grad()
 
-                D_real = self.D(disc_input)
-                # D_real_loss = torch.mean(D_real)
-                D_real_loss = self.BCE_loss(D_real, self.y_real_)
+                if self.lossfunc == 'gan_loss':
+                    D_real = self.D(disc_input)
+                    # D_real_loss = torch.mean(D_real)
+                    D_real_loss = self.BCE_loss(D_real, self.y_real_)
 
-                G_ = torch.squeeze(self.G(gen_input))
-                D_fake = self.D((G_, gen_sketches))
-                # D_fake_loss = torch.mean(D_fake)
-                D_fake_loss = self.BCE_loss(D_fake, self.y_fake_)
+                    G_ = torch.squeeze(self.G(gen_input))
 
-                D_loss = D_real_loss + D_fake_loss
-                self.train_hist['D_loss'].append(D_loss.item())
+                    D_fake = self.D(torch.cat((G_[:, None, :, :], gen_sketches[:, None, :, :]), dim = 1))
+                    # D_fake_loss = torch.mean(D_fake)
+                    D_fake_loss = self.BCE_loss(D_fake, self.y_fake_)
 
-                D_loss.backward()
-                self.D_optimizer.step()
+                    D_loss = D_real_loss + D_fake_loss
+                    self.train_hist['D_loss'].append(D_loss.item())
 
-                # update G network
-                self.G_optimizer.zero_grad()
+                    D_loss.backward()
+                    self.D_optimizer.step()
 
-                G_ = torch.squeeze(self.G(gen_input))
-                D_fake = self.D((G_, gen_sketches))
-                G_loss = self.BCE_loss(D_fake, self.y_real_)
-                self.train_hist['G_loss'].append(G_loss.item())
+                    # update G network
+                    self.G_optimizer.zero_grad()
 
-                G_loss.backward()
-                self.G_optimizer.step()
+                    G_ = torch.squeeze(self.G(gen_input))
+                    D_fake = self.D(torch.cat((G_[:, None, :, :], gen_sketches[:, None, :, :]), dim = 1))
+                    G_loss = self.BCE_loss(D_fake, self.y_real_)
+                    self.train_hist['G_loss'].append(G_loss.item())
+
+                    G_loss.backward()
+                    self.G_optimizer.step()
+                    return
+                
+                if self.lossfunc == 'wgan-gp_loss':
+                    # cancat = torch.cat((tifs[:, None, :, :], dis_sketches[:, None, :, :]), dim = 1)
+                    D_real = self.D(disc_input)
+                    D_real_loss = torch.mean(D_real)
+
+                    G_ = self.G(gen_input)
+                    G_ = torch.squeeze(self.G(gen_input))
+                    D_fake = self.D(torch.cat((G_[:, None, :, :], gen_sketches[:, None, :, :]), dim = 1))
+                    D_fake_loss = torch.mean(D_fake)
+
+                    alpha = torch.rand((self.batch_size, 1, 1, 1))
+                    if self.gpu_mode:
+                        alpha = alpha.cuda()
+
+                    g_data = torch.cat((G_[:, None, :, :], gen_sketches[:, None, :, :]), dim = 1)
+                    x_hat = alpha * disc_input.data + (1 - alpha) * g_data.data
+                    x_hat.requires_grad = True
+
+                    pred_hat = self.D(x_hat.float())
+
+                    if self.gpu_mode:
+                        gradients = grad(outputs=pred_hat, inputs=x_hat, grad_outputs=torch.ones(pred_hat.size()).cuda(),
+                                    create_graph=True, retain_graph=True, only_inputs=True)[0]
+                    else:
+                        gradients = grad(outputs=pred_hat, inputs=x_hat, grad_outputs=torch.ones(pred_hat.size()),
+                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+                    gradient_penalty = self.lambda_ * ((gradients.view(gradients.size()[0], -1).norm(2, 1) - 1) ** 2).mean()
+                    D_loss = -D_real_loss + D_fake_loss + gradient_penalty
+
+                    D_loss.backward()
+                    self.D_optimizer.step()
+
+                    if ((stepcount+1) % self.n_critic) == 0:
+                        # update G network
+                        self.G_optimizer.zero_grad()
+
+                        G_ = self.G(gen_input)
+                        G_ = torch.squeeze(self.G(gen_input))
+                        D_fake = self.D(torch.cat((G_[:, None, :, :], gen_sketches[:, None, :, :]), dim = 1))
+                        G_loss = -torch.mean(D_fake)
+                        self.train_hist['G_loss'].append(G_loss.item())
+
+                        G_loss.backward()
+                        self.G_optimizer.step()
+
+                        self.train_hist['D_loss'].append(D_loss.item())
                 #### following are WGAN_GP implementation
                 # # gradient penalty
                 # alpha = torch.rand((self.batch_size, 1, 1, 1))
@@ -366,7 +412,6 @@ class CGAN(object):
 
         self.G.load_state_dict(torch.load(os.path.join(save_dir, self.model_name + '_G.pkl')))
         self.D.load_state_dict(torch.load(os.path.join(save_dir, self.model_name + '_D.pkl')))
-
 
 
 class CGAN_dataset(IterableDataset):
