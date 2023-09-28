@@ -1,6 +1,6 @@
 import argparse, os, torch
 from WGAN import WGAN
-
+from CGAN import CGAN
 import utils
 
 class WGANconfig():
@@ -97,8 +97,8 @@ def main():
         torch.backends.cudnn.benchmark = True
 
         # declare instance for GAN
-    if args.gan_type == 'WGAN':
-        gan = WGAN(config)
+    if args.gan_type == 'CGAN':
+        gan = CGAN(config)
     else:
         raise Exception("[!] There is no option for " + args.gan_type)
 
