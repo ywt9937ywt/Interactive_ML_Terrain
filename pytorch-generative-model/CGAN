@@ -116,7 +116,7 @@ class CGAN(object):
         self.save_dir = join(config.root_path, config.save_dir)
         self.result_dir = join(config.root_path, config.result_dir)
         self.lossfunc = config.lossfun
-        # self.test_sketch = cv2.imread("E:\\terrain_project\\usgs_terrain\\tiff_file\\us_patch128\\00000rs.png",0)
+        # self.test_sketch = cv2.imread("E:\\terrain_project\\usgs_terrain\\tiff_file\\us_patch128\\00000.rs.png",0)
         # self.test_sketch = torch.LongTensor(self.test_sketch)
 
 
