@@ -3,7 +3,7 @@ from WGAN import WGAN
 from CGAN import CGAN
 import utils
 
-class WGANconfig():
+class CGANconfig():
     gan_type = 'WGAN_GP'
     lossfun = 'wgan-gp_loss' # or 'gan_loss'
     # lossfun = 'gan_loss'
@@ -35,7 +35,7 @@ def parse_args():
     desc = "Pytorch implementation of GAN collections"
     parser = argparse.ArgumentParser(description=desc)
 
-    parser.add_argument('--gan_type', type=str, default='WGAN',
+    parser.add_argument('--gan_type', type=str, default='CGAN',
                         choices=['GAN', 'CGAN', 'infoGAN', 'ACGAN', 'EBGAN', 'BEGAN', 'WGAN', 'WGAN_GP', 'DRAGAN', 'LSGAN'],
                         help='The type of GAN')
     parser.add_argument('--dataset', type=str, default='mnist', choices=['mnist', 'fashion-mnist', 'cifar10', 'cifar100', 'svhn', 'stl10', 'lsun-bed'],
@@ -89,7 +89,7 @@ def check_args(args):
 def main():
     # parse arguments
     args = parse_args()
-    config = WGANconfig()
+    config = CGANconfig()
     if args is None:
         exit()
 
